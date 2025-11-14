@@ -12,68 +12,108 @@ final class NetworkManagerDependencies {
     
     private var request: URLRequest
     private let database: Database
-    
-    init(with request: URLRequest,
-         db: Database) {
+    private let networkOptions: ClickstreamNetworkOptions
+
+    init(with request: URLRequest, db: Database, networkOptions: ClickstreamNetworkOptions) {
         self.database = db
         self.request = request
-    }
-    
-    private let networkQueue = SerialQueue(label: Constants.QueueIdentifiers.network.rawValue, qos: .utility)
-    
-    private let daoQueue = DispatchQueue(label: Constants.QueueIdentifiers.dao.rawValue,
-                                       qos: .utility,
-                                       attributes: .concurrent)
-    
-    private func getNetworkConfig() -> DefaultNetworkConfiguration {
-        return DefaultNetworkConfiguration(request: request)
+        self.networkOptions = networkOptions
     }
 
-    private lazy var networkService: NetworkService = {
-        return DefaultNetworkService<DefaultSocketHandler>(with: getNetworkConfig(),
-                                                               performOnQueue: networkQueue)
-    }()
-    
+    private let networkQueue = SerialQueue(label: Constants.QueueIdentifiers.network.rawValue, qos: .utility)
+    private let daoQueue = DispatchQueue(label: Constants.QueueIdentifiers.dao.rawValue, qos: .utility, attributes: .concurrent)
+
     private lazy var reachability: NetworkReachability = {
-        let reachability = DefaultNetworkReachability(with: networkQueue)
-        return reachability
+        DefaultNetworkReachability(with: networkQueue)
     }()
-    
+
     private lazy var deviceStatus: DefaultDeviceStatus = {
-        let deviceStatus = DefaultDeviceStatus(performOnQueue: networkQueue)
-        return deviceStatus
+        DefaultDeviceStatus(performOnQueue: networkQueue)
     }()
-    
+
     private lazy var appStateNotifier: AppStateNotifierService = {
-        return DefaultAppStateNotifierService(with: networkQueue)
+        DefaultAppStateNotifierService(with: networkQueue)
     }()
-    
-    private lazy var defaultPersistence: DefaultDatabaseDAO<EventRequest> = {
-        return DefaultDatabaseDAO<EventRequest>(database: database,
-                                                performOnQueue: daoQueue)
+
+    private lazy var socketPersistence: DefaultDatabaseDAO<EventRequest> = {
+        DefaultDatabaseDAO<EventRequest>(database: database,
+                                         performOnQueue: daoQueue)
     }()
-    
+
+    private lazy var courierPersistance: DefaultDatabaseDAO<CourierEventRequest> = {
+        DefaultDatabaseDAO<CourierEventRequest>(database: database,
+                                         performOnQueue: daoQueue)
+    }()
+
     private lazy var keepAliveService: KeepAliveService = {
-        return DefaultKeepAliveServiceWithSafeTimer(with: networkQueue,
-                                                    duration: Clickstream.configurations.connectionRetryDuration,
-                                                    reachability: reachability)
+        DefaultKeepAliveServiceWithSafeTimer(with: networkQueue,
+                                             duration: Clickstream.configurations.connectionRetryDuration,
+                                             reachability: reachability)
+    }()
+
+    private lazy var websocketNetworkService: NetworkService = {
+        WebsocketNetworkService<DefaultSocketHandler>(with: getNetworkConfig(),
+                                                      performOnQueue: networkQueue)
     }()
     
-    private lazy var retryMech: DefaultRetryMechanism = {
-       return DefaultRetryMechanism(networkService: networkService,
-                                    reachability: reachability,
-                                    deviceStatus: deviceStatus,
-                                    appStateNotifier: appStateNotifier,
-                                    performOnQueue: networkQueue,
-                                    persistence: defaultPersistence,
-                                    keepAliveService: keepAliveService)
+    private lazy var courierNetworkService: NetworkService = {
+        CourierNetworkService<DefaultCourierHandler>(with: getNetworkConfig(),
+                                                     performOnQueue: networkQueue)
     }()
-    
-    func makeNetworkBuilder() -> any NetworkBuildable {
-        return DefaultNetworkBuilder(networkConfigs: getNetworkConfig(), retryMech: retryMech, performOnQueue: networkQueue)
+
+    private lazy var websocketRetryMech: WebsocketRetryMechanism = {
+        WebsocketRetryMechanism(networkService: websocketNetworkService,
+                                reachability: reachability,
+                                deviceStatus: deviceStatus,
+                                appStateNotifier: appStateNotifier,
+                                performOnQueue: networkQueue,
+                                persistence: socketPersistence,
+                                keepAliveService: keepAliveService)
+    }()
+
+    private lazy var courierRetryMech: CourierRetryMechanism = {
+        CourierRetryMechanism(networkOptions: networkOptions,
+                              networkService: courierNetworkService,
+                              reachability: reachability,
+                              deviceStatus: deviceStatus,
+                              appStateNotifier: appStateNotifier,
+                              performOnQueue: networkQueue,
+                              persistence: courierPersistance)
+    }()
+
+    private func getNetworkConfig() -> DefaultNetworkConfiguration {
+        DefaultNetworkConfiguration(request: request, networkOptions: networkOptions)
+    }
+
+    func makeNetworkBuilder() -> WebsocketNetworkBuilder {
+        WebsocketNetworkBuilder(networkConfigs: getNetworkConfig(),
+                                retryMech: websocketRetryMech,
+                                performOnQueue: networkQueue)
+    }
+
+    func makeCourierNetworkBuilder() -> CourierNetworkBuilder {
+        CourierNetworkBuilder(networkConfigs: getNetworkConfig(),
+                              retryMech: courierRetryMech,
+                              performOnQueue: networkQueue)
+    }
+
+    var isSocketConnected: Bool {
+        websocketNetworkService.isConnected
+    }
+
+    var isCourierConnected: Bool {
+        courierNetworkService.isConnected
+    }
+
+    func provideClientIdentifiers(with identifiers: ClickstreamClientIdentifiers, topic: String) {
+        guard let courierIdentifiers = identifiers as? CourierIdentifiers else {
+            return
+        }
+
+        courierRetryMech.configureIdentifiers(with: courierIdentifiers, topic: topic)
     }
     
-    var isSocketConnected: Bool {
-        networkService.isConnected
+    func removeClientIdentifiers() {
+        courierRetryMech.removeIdentifiers()
     }
 }

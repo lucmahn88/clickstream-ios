@@ -17,10 +17,15 @@ class CourierEventProcessorTest: XCTestCase {
     private var mockWarehouser: MockEventWarehouser!
     private var mockSampler: MockEventSampler!
     private var courierEventProcessor: CourierEventProcessor!
+    private var courierBatchEventProcessor: CourierEventBatchProcessor!
     private var testEvent: ClickstreamEvent!
-    
+    private var networkOptions: ClickstreamNetworkOptions!
+    private var batchSizeRegulator: CourierBatchSizeRegulator!
+    private var persitance: DefaultDatabaseDAO<CourierEvent>!
+
     override func setUp() {
         super.setUp()
+        networkOptions = ClickstreamNetworkOptions()
         mockQueue = SerialQueue(label: "test.queue", qos: .utility)
         mockClassifier = MockEventClassifier()
         mockWarehouser = MockEventWarehouser()

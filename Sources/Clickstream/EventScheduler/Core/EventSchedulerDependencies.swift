@@ -11,13 +11,21 @@ import Foundation
 /// A class that handles the dependencies pertaining to the EventScheduler Block.
 final class EventSchedulerDependencies {
     
-    private let networkBuildable: any NetworkBuildable
+    private let socketNetworkBuider: any NetworkBuildable
+    private let courierNetworkBuider: any NetworkBuildable
+    private let networkOptions: ClickstreamNetworkOptions
+
     private let database: Database
     
-    init(with networkBuildable: any NetworkBuildable,
-         db: Database) {
+    init(socketNetworkBuider: any NetworkBuildable,
+         courierNetworkBuider: any NetworkBuildable,
+         db: Database,
+         networkOptions: ClickstreamNetworkOptions) {
+
         self.database = db
-        self.networkBuildable = networkBuildable
+        self.socketNetworkBuider = socketNetworkBuider
+        self.courierNetworkBuider = courierNetworkBuider
+        self.networkOptions = networkOptions
     }
     
     /// A single instance of queue which ensures that all the tasks are performed on this queue.
@@ -44,33 +52,68 @@ final class EventSchedulerDependencies {
         return DefaultAppStateNotifierService(with: schedulerQueue)
     }()
     
-    private lazy var eventCreator: DefaultEventBatchCreator = {
-        return DefaultEventBatchCreator(with: self.networkBuildable, performOnQueue: schedulerQueue)
+    private lazy var socketEventBatchCreator: DefaultEventBatchCreator = {
+        DefaultEventBatchCreator(with: self.socketNetworkBuider, performOnQueue: schedulerQueue)
+    }()
+    
+    private lazy var courierEventBatchCreator: CourierEventBatchCreator = {
+        CourierEventBatchCreator(with: self.courierNetworkBuider, performOnQueue: schedulerQueue)
     }()
 
-    private lazy var eventBatchProcessor: DefaultEventBatchProcessor = {
-        return DefaultEventBatchProcessor(with: eventCreator,
-                                          schedulerService: schedulerService,
-                                          appStateNotifier: appStateNotifier,
-                                          batchSizeRegulator: batchSizeRegulator,
-                                          persistence: persistence)
+    private lazy var socketEventBatchProcessor: DefaultEventBatchProcessor = {
+        DefaultEventBatchProcessor(
+            with: socketEventBatchCreator,
+            schedulerService: schedulerService,
+            appStateNotifier: appStateNotifier,
+            batchSizeRegulator: batchSizeRegulator,
+            persistence: socketPersistence
+        )
+    }()
+    
+    private lazy var courierBatchProcessor: CourierEventBatchProcessor = {
+        CourierEventBatchProcessor(
+            with: courierEventBatchCreator,
+            schedulerService: schedulerService,
+            appStateNotifier: appStateNotifier,
+            batchSizeRegulator: courierBatchSizeRegulator,
+            persistence: courierPersistence
+        )
     }()
 
-    private lazy var persistence: DefaultDatabaseDAO<Event> = {
-        return DefaultDatabaseDAO<Event>(database: database,
-                                         performOnQueue: daoQueue)
+    private lazy var socketPersistence: DefaultDatabaseDAO<Event> = {
+        DefaultDatabaseDAO<Event>(database: database, performOnQueue: daoQueue)
+    }()
+
+    private lazy var courierPersistence: DefaultDatabaseDAO<CourierEvent> = {
+        DefaultDatabaseDAO<CourierEvent>(database: database, performOnQueue: daoQueue)
     }()
     
     private lazy var batchSizeRegulator: DefaultBatchSizeRegulator = {
-        return DefaultBatchSizeRegulator(userDefaultKey: "regulatedNumberOfItemsPerBatch")
+        DefaultBatchSizeRegulator()
+    }()
+
+    private lazy var courierBatchSizeRegulator: CourierBatchSizeRegulator = {
+        CourierBatchSizeRegulator()
     }()
 
     /// Call this method to get the EventWarehouser instance.
     /// - Returns: EventWarehouser instance.
     func makeEventWarehouser() -> DefaultEventWarehouser {
-        return DefaultEventWarehouser(with: eventBatchProcessor,
-                                      performOnQueue: warehouserQueue,
-                                      persistence: persistence,
-                                      batchSizeRegulator: batchSizeRegulator)
+        DefaultEventWarehouser(
+            with: socketEventBatchProcessor,
+            performOnQueue: warehouserQueue,
+            persistence: socketPersistence,
+            batchSizeRegulator: batchSizeRegulator
+        )
+    }
+    
+    func makeCourierEventWarehouser() -> CourierEventWarehouser {
+        CourierEventWarehouser(
+            with: courierBatchProcessor,
+            performOnQueue: warehouserQueue,
+            persistance: courierPersistence,
+            batchSizeRegulator: courierBatchSizeRegulator,
+            networkOptions: networkOptions
+        )
     }
 }

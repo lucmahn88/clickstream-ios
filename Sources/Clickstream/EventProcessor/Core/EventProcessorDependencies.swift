@@ -10,9 +10,12 @@ import Foundation
 
 final class EventProcessorDependencies {
     
-    private let eventWarehouser: any EventWarehouser
-    private let eventSampler: EventSampler?
-    
+    private let socketEventWarehouser: DefaultEventWarehouser
+    private let courierEventWarehouser: CourierEventWarehouser
+
+    private let socketEventSampler: EventSampler?
+    private let courierEventSampler: EventSampler?
+
     private lazy var serialQueue: SerialQueue = {
         return SerialQueue(label: Constants.QueueIdentifiers.processor.rawValue)
     }()
@@ -21,20 +24,27 @@ final class EventProcessorDependencies {
         return DefaultEventClassifier()
     }()
     
-    init(with eventWarehouser: any EventWarehouser, sampler: EventSampler? = nil) {
-        self.eventWarehouser = eventWarehouser
-        self.eventSampler = sampler
+    init(socketEventWarehouser: DefaultEventWarehouser,
+         courierEventWarehouser: CourierEventWarehouser,
+         socketEventSampler: EventSampler? = nil,
+         courierEventSampler: EventSampler? = nil) {
+        self.socketEventWarehouser = socketEventWarehouser
+        self.courierEventWarehouser = courierEventWarehouser
+        self.socketEventSampler = socketEventSampler
+        self.courierEventSampler = courierEventSampler
     }
-    
-    func makeEventProcessor() -> any EventProcessor {
+
+    func makeEventProcessor() -> DefaultEventProcessor {
         return DefaultEventProcessor(performOnQueue: serialQueue,
                                      classifier: classifier,
-                                     eventWarehouser: eventWarehouser, sampler: eventSampler)
+                                     eventWarehouser: socketEventWarehouser,
+                                     sampler: socketEventSampler)
     }
-    
-    func makeCourierEventProcessor() -> any EventProcessor {
+
+    func makeCourierEventProcessor() -> CourierEventProcessor {
         return CourierEventProcessor(performOnQueue: serialQueue,
                                      classifier: classifier,
-                                     eventWarehouser: eventWarehouser, sampler: eventSampler)
+                                     eventWarehouser: courierEventWarehouser,
+                                     sampler: courierEventSampler)
     }
 }
