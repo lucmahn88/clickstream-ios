@@ -20,15 +20,21 @@ let package = Package(
         .package(name: "Reachability", url: "https://github.com/ashleymills/Reachability.swift", from: "5.0.0"),
         .package(name: "GRDB", url: "https://github.com/groue/GRDB.swift.git", from: "6.7.0"),
         .package(name: "Starscream", url: "https://github.com/daltoniam/Starscream.git", .exact("4.0.5")),
-        .package(name: "CourierCore", url: "https://github.com/gojek/courier-iOS.git", from: "1.0.0"),
-        .package(name: "CourierMQTT", url: "https://github.com/gojek/courier-iOS.git", from: "1.0.0"),
+        .package(name: "Courier", url: "https://github.com/gojek/courier-iOS.git", from: "1.0.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
             name: "Clickstream",
-            dependencies: ["SwiftProtobuf", "Reachability", "GRDB", "Starscream", "CourierCore", "CourierMQTT"],
+            dependencies: [
+                "SwiftProtobuf", 
+                "Reachability", 
+                "GRDB", 
+                "Starscream", 
+                .product(name: "CourierCore", package: "Courier"),
+                .product(name: "CourierMQTT", package: "Courier")
+            ],
             path: "Sources"),
         .testTarget(
             name: "ClickstreamTests",
