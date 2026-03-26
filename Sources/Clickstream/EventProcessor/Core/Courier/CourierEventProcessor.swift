@@ -16,7 +16,6 @@ final class CourierEventProcessor: EventProcessor {
     private let serialQueue: SerialQueue
     private let classifier: EventClassifier
     private let networkOptions: ClickstreamNetworkOptions
-    private var identifiers: ClickstreamClientIdentifiers?
 
     init(performOnQueue: SerialQueue,
          classifier: EventClassifier,
@@ -27,31 +26,15 @@ final class CourierEventProcessor: EventProcessor {
         self.eventWarehouser = eventWarehouser
         self.networkOptions = networkOptions
     }
-    
-    func setClientIdentifiers(_ identifiers: ClickstreamClientIdentifiers?) {
-        self.identifiers = identifiers
-    }
-
-    func removeClientIdentifiers() {
-        identifiers = nil
-    }
 
     func shouldTrackEvent(event: ClickstreamEvent) -> Bool {
-        networkOptions.isCourierEnabled &&
-        networkOptions.courierEventTypes.contains(event.messageName) &&
-        identifiers != nil
+        networkOptions.courierEventTypes.contains(event.messageName)
     }
     
     func createEvent(event: ClickstreamEvent, isUserAuthenticated: Bool) {
         self.serialQueue.async { [weak self] in guard let checkedSelf = self else { return }
-            if checkedSelf.networkOptions.courierExclusiveEventsEnabled {
-                guard event.shouldTrackOnCourier(isUserLoggedIn: isUserAuthenticated, networkOptions: checkedSelf.networkOptions) else {
+            guard event.shouldTrackOnCourier(isUserLoggedIn: isUserAuthenticated, networkOptions: checkedSelf.networkOptions) else {
                     return
-                }
-            } else {
-                guard checkedSelf.shouldTrackEvent(event: event) else {
-                    return
-                }
             }
 
             #if EVENT_VISUALIZER_ENABLED
@@ -91,6 +74,8 @@ final class CourierEventProcessor: EventProcessor {
                 $0.product = event.product
                 $0.eventTimestamp = Google_Protobuf_Timestamp(date: event.timeStamp)
                 $0.isExclusive = isExslusive
+                $0.appVersion = Clickstream.appVersion
+                $0.platform = .ios
             }
             return try CourierEvent(guid: event.guid,
                                     timestamp: event.timeStamp,
